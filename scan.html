@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="fa">
+<head>
+  <meta charset="UTF-8">
+  <title>اسکن بارکد زنده</title>
+  <style>
+    body { font-family: sans-serif; text-align: center; }
+    video { width: 80%; margin: 10px; border: 2px solid #444; border-radius: 12px; }
+    #result { margin-top: 20px; font-size: 18px; font-weight: bold; color: green; }
+  </style>
+</head>
+<body>
+  <h2>📷 بارکدخوان زنده</h2>
+  <video id="video" autoplay></video>
+  <div id="result">⏳ در حال اسکن...</div>
+
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+  <script>
+    const video = document.getElementById("video");
+    const resultEl = document.getElementById("result");
+
+    // گرفتن دسترسی به دوربین
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+      .then(stream => video.srcObject = stream)
+      .catch(err => resultEl.innerText = "❌ دسترسی به دوربین رد شد: " + err);
+
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+
+    function scan() {
+      if (video.readyState === video.HAVE_ENOUGH_DATA) {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const code = jsQR(imageData.data, canvas.width, canvas.height);
+
+        if (code) {
+          resultEl.innerText = "✅ بارکد: " + code.data;
+          sendToESP(code.data);
+        }
+      }
+      requestAnimationFrame(scan);
+    }
+    requestAnimationFrame(scan);
+
+    // ارسال تاریخ به ESP
+    function sendToESP(data) {
+      fetch("http://192.168.4.1/setDate?value=" + encodeURIComponent(data))
+        .then(r => r.text())
+        .then(t => console.log("جواب ESP:", t))
+        .catch(e => console.error("خطا در ارسال:", e));
+    }
+  </script>
+</body>
+</html>
