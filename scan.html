@@ -1,57 +1,40 @@
 <!DOCTYPE html>
 <html lang="fa">
 <head>
-<meta charset="UTF-8">
-<title>QR به ESP</title>
-<script src="https://unpkg.com/html5-qrcode"></script>
+  <meta charset="UTF-8">
+  <title>بارکدخوان و ارسال به ESP</title>
+  <script src="https://unpkg.com/html5-qrcode"></script>
 </head>
 <body>
-<h2>QR اسکنر</h2>
-<div id="reader" style="width:300px;"></div>
+  <h2>📷 بارکدخوان</h2>
+  <div id="reader" style="width:300px"></div>
+  <p>تاریخ انقضا: <span id="expiry"></span></p>
+  <button onclick="sendToESP()">تایید و ارسال به ESP</button>
 
-<p>تاریخ QR: <span id="qrDate">-</span></p>
-<p>روزهای باقی مانده: <span id="remainingDays">-</span></p>
+  <script>
+    let expiryDate = "";
 
-<button id="sendBtn" disabled>تایید و روشن کردن چراغ</button>
+    // بارکدخوان
+    function onScanSuccess(decodedText, decodedResult) {
+      expiryDate = decodedText; 
+      document.getElementById("expiry").innerText = expiryDate;
+    }
 
-<script>
-let qrData = "";
-let remainingDays = 0;
+    let html5QrcodeScanner = new Html5QrcodeScanner(
+      "reader", { fps: 10, qrbox: 250 });
+    html5QrcodeScanner.render(onScanSuccess);
 
-// محاسبه تقریبی روزهای باقی مانده
-function calcRemainingDays(dateStr) {
-    let parts = dateStr.split("/");
-    let year = parseInt(parts[0]) + 621; // تبدیل تقریبی شمسی → میلادی
-    let month = parseInt(parts[1]) - 1; // JS ماه 0-11
-    let day = parseInt(parts[2]);
-    let expire = new Date(year, month, day);
-    let today = new Date();
-    let diffTime = expire - today;
-    let diffDays = Math.ceil(diffTime / (1000*60*60*24));
-    return diffDays;
-}
-
-// QR اسکنر
-function onScanSuccess(decodedText, decodedResult) {
-    qrData = decodedText;
-    document.getElementById("qrDate").innerText = qrData;
-    remainingDays = calcRemainingDays(qrData);
-    document.getElementById("remainingDays").innerText = remainingDays;
-    document.getElementById("sendBtn").disabled = false;
-}
-
-// راه اندازی اسکنر
-var html5QrcodeScanner = new Html5QrcodeScanner(
-    "reader", { fps: 10, qrbox: 250 });
-html5QrcodeScanner.render(onScanSuccess);
-
-// دکمه ارسال به ESP
-document.getElementById("sendBtn").addEventListener("click", () => {
-    fetch("http://192.168.1.50/setDate?value=" + encodeURIComponent(qrData))
-    .then(r => r.text())
-    .then(t => alert("ESP پاسخ داد:\n" + t))
-    .catch(e => alert("خطا در ارسال به ESP: " + e));
-});
-</script>
+    // ارسال به ESP
+    function sendToESP() {
+      if (!expiryDate) {
+        alert("اول بارکد رو اسکن کن!");
+        return;
+      }
+      // آدرس ثابت ESP (از کدی که قبلا دادم)
+      fetch("http://192.168.43.50/set?expiry=" + encodeURIComponent(expiryDate))
+        .then(r => alert("✅ تاریخ فرستاده شد به ESP"))
+        .catch(err => alert("⚠️ خطا در ارسال به ESP"));
+    }
+  </script>
 </body>
 </html>
