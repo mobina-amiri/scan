@@ -51,7 +51,6 @@
   const MQTT_PASS = '';
   const DEFAULT_DEVICE_ID = 'esp8266-lamps-001';
 
-  // اتصال MQTT
   const client = mqtt.connect(MQTT_WSS_URL, {
     username: MQTT_USER || undefined,
     password: MQTT_PASS || undefined,
@@ -73,7 +72,6 @@
     document.getElementById('status').className = 'err';
   });
 
-  // اسکنر بارکد
   const video = document.getElementById('video');
   const codeReader = new ZXing.BrowserMultiFormatReader();
   const $raw = document.getElementById('raw');
@@ -85,7 +83,6 @@
       document.getElementById('status').textContent = 'در حال دسترسی به دوربین…';
       document.getElementById('status').className = 'warn';
 
-      // دوربین پیش‌فرض موبایل
       codeReader.decodeFromVideoDevice(null, 'video', (result, err) => {
         if (result) handleBarcode(result.getText());
         if (err && !(err instanceof ZXing.NotFoundException)) console.error(err);
@@ -99,35 +96,44 @@
     }
   });
 
-  // تبدیل تاریخ شمسی به میلادی و محاسبه روزهای مانده
+  // نرمال کردن تاریخ شمسی: 1404/9/6 → 1404/09/06
+  function normalizeJalaliDate(jalaliDateStr){
+      const parts = jalaliDateStr.trim().split('/');
+      if(parts.length !== 3) return null;
+      let [y,m,d] = parts;
+      if(m.length === 1) m = '0'+m;
+      if(d.length === 1) d = '0'+d;
+      return `${y}/${m}/${d}`;
+  }
+
   function daysUntilJalali(jalaliDateStr){
-    const m = moment(jalaliDateStr, 'jYYYY/jMM/jDD', true); // فرمت صحیح
-    if(!m.isValid()) return '-';
-    const now = moment();
-    const diff = m.diff(now, 'days');
-    return diff;
+      const normalized = normalizeJalaliDate(jalaliDateStr);
+      if(!normalized) return '-';
+      const m = moment(normalized, 'jYYYY/jMM/jDD', false);
+      if(!m.isValid()) return '-';
+      return m.diff(moment(), 'days');
   }
 
   function handleBarcode(text){
-    const expiry = text.trim();
-    $raw.textContent = expiry;
+      const expiry = text.trim();
+      $raw.textContent = expiry;
 
-    const dleft = daysUntilJalali(expiry);
-    $days.textContent = dleft;
+      const dleft = daysUntilJalali(expiry);
+      $days.textContent = dleft;
 
-    const deviceId = document.getElementById('deviceId').value.trim() || DEFAULT_DEVICE_ID;
-    const topic = `devices/${deviceId}/expiry`;
-    const payload = JSON.stringify({ expiry: expiry, daysLeft: dleft, productCode: expiry });
+      const deviceId = document.getElementById('deviceId').value.trim() || DEFAULT_DEVICE_ID;
+      const topic = `devices/${deviceId}/expiry`;
+      const payload = JSON.stringify({ expiry: expiry, daysLeft: dleft, productCode: expiry });
 
-    client.publish(topic, payload, { qos: 0, retain: true }, (err)=>{
-      if(err){
-        $sent.textContent = 'خطا در ارسال MQTT: ' + err.message;
-        $sent.className = 'err';
-      } else {
-        $sent.textContent = `ارسال شد به ${topic}`;
-        $sent.className = 'ok';
-      }
-    });
+      client.publish(topic, payload, { qos: 0, retain: true }, (err)=>{
+        if(err){
+          $sent.textContent = 'خطا در ارسال MQTT: ' + err.message;
+          $sent.className = 'err';
+        } else {
+          $sent.textContent = `ارسال شد به ${topic}`;
+          $sent.className = 'ok';
+        }
+      });
   }
   </script>
 </body>
