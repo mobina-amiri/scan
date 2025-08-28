@@ -33,7 +33,6 @@
   <div class="row">
     <strong>نتیجه:</strong>
     <div>بارکد / تاریخ انقضا: <code id="raw"></code></div>
-    <div>روزهای مانده: <code id="days"></code></div>
     <div>وضعیت ارسال: <span id="sent"></span></div>
   </div>
 
@@ -41,8 +40,6 @@
   <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
   <!-- ZXing -->
   <script src="https://unpkg.com/@zxing/library@latest"></script>
-  <!-- moment-jalaali -->
-  <script src="https://cdn.jsdelivr.net/npm/moment-jalaali/build/moment-jalaali.js"></script>
 
   <script>
   // ====== تنظیمات MQTT ======
@@ -75,7 +72,6 @@
   const video = document.getElementById('video');
   const codeReader = new ZXing.BrowserMultiFormatReader();
   const $raw = document.getElementById('raw');
-  const $days = document.getElementById('days');
   const $sent = document.getElementById('sent');
 
   document.getElementById('btnStart').addEventListener('click', async () => {
@@ -96,34 +92,13 @@
     }
   });
 
-  // نرمال کردن تاریخ شمسی: 1404/9/6 → 1404/09/06
-  function normalizeJalaliDate(jalaliDateStr){
-      const parts = jalaliDateStr.trim().split('/');
-      if(parts.length !== 3) return null;
-      let [y,m,d] = parts;
-      if(m.length === 1) m = '0'+m;
-      if(d.length === 1) d = '0'+d;
-      return `${y}/${m}/${d}`;
-  }
-
-  function daysUntilJalali(jalaliDateStr){
-      const normalized = normalizeJalaliDate(jalaliDateStr);
-      if(!normalized) return '-';
-      const m = moment(normalized, 'jYYYY/jMM/jDD', false);
-      if(!m.isValid()) return '-';
-      return m.diff(moment(), 'days');
-  }
-
   function handleBarcode(text){
       const expiry = text.trim();
       $raw.textContent = expiry;
 
-      const dleft = daysUntilJalali(expiry);
-      $days.textContent = dleft;
-
       const deviceId = document.getElementById('deviceId').value.trim() || DEFAULT_DEVICE_ID;
       const topic = `devices/${deviceId}/expiry`;
-      const payload = JSON.stringify({ expiry: expiry, daysLeft: dleft, productCode: expiry });
+      const payload = JSON.stringify({ expiry: expiry });
 
       client.publish(topic, payload, { qos: 0, retain: true }, (err)=>{
         if(err){
