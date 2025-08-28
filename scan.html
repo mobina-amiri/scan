@@ -15,7 +15,7 @@
   </style>
 </head>
 <body>
-  <h1>اسکن بارکد و ارسال تاریخ انقضا به ESP8266</h1>
+  <h1>اسکن تاریخ انقضا و ارسال به ESP8266</h1>
 
   <div class="row">
     <label>Device ID: </label>
@@ -31,8 +31,7 @@
 
   <div class="row">
     <strong>نتیجه:</strong>
-    <div>بارکد: <code id="raw"></code></div>
-    <div>تاریخ انقضا: <code id="expiry"></code></div>
+    <div>بارکد / تاریخ انقضا: <code id="raw"></code></div>
     <div>روزهای مانده: <code id="days"></code></div>
     <div>وضعیت ارسال: <span id="sent"></span></div>
   </div>
@@ -41,16 +40,17 @@
   <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
   <!-- ZXing -->
   <script src="https://unpkg.com/@zxing/library@latest"></script>
+  <!-- moment-jalaali برای تبدیل تاریخ شمسی -->
+  <script src="https://cdn.jsdelivr.net/npm/moment-jalaali@0.9.2/build/moment-jalaali.js"></script>
 
   <script>
   // ====== تنظیمات MQTT ======
-  const MQTT_WSS_URL = 'wss://broker.hivemq.com:8000/mqtt'; // تست با بروکر عمومی
-  const MQTT_USER = '';   // برای HiveMQ public خالی است
+  const MQTT_WSS_URL = 'wss://broker.hivemq.com:8000/mqtt';
+  const MQTT_USER = '';
   const MQTT_PASS = '';
-
   const DEFAULT_DEVICE_ID = 'esp8266-lamps-001';
 
-  // ====== اتصال MQTT ======
+  // اتصال MQTT
   const client = mqtt.connect(MQTT_WSS_URL, {
     username: MQTT_USER || undefined,
     password: MQTT_PASS || undefined,
@@ -72,11 +72,10 @@
     document.getElementById('status').className = 'err';
   });
 
-  // ====== اسکنر بارکد ======
+  // اسکنر بارکد
   const video = document.getElementById('video');
   const codeReader = new ZXing.BrowserMultiFormatReader();
   const $raw = document.getElementById('raw');
-  const $expiry = document.getElementById('expiry');
   const $days = document.getElementById('days');
   const $sent = document.getElementById('sent');
 
@@ -99,28 +98,26 @@
     }
   });
 
-  // ====== توابع ======
-  function daysUntil(dateISO){
-    const now = new Date();
-    const tgt = new Date(dateISO + 'T12:00:00Z');
-    const diffMs = tgt.getTime() - now.getTime();
-    return Math.round(diffMs / (1000*60*60*24));
+  // تابع تبدیل تاریخ شمسی به میلادی و محاسبه روزهای مانده
+  function daysUntilJalali(jalaliDateStr){
+    // فرمت ورودی: 1404/09/06
+    const m = moment.from(jalaliDateStr, 'jYYYY/jMM/jDD', true); 
+    if(!m.isValid()) return '-';
+    const now = moment();
+    const diff = m.diff(now, 'days');
+    return diff;
   }
 
   function handleBarcode(text){
-    $raw.textContent = text;
+    const expiry = text.trim();
+    $raw.textContent = expiry;
 
-    // همان بارکد را به عنوان تاریخ انقضا در نظر می‌گیریم
-    const expiryISO = text.trim();
-    $expiry.textContent = expiryISO;
-
-    // محاسبه روزهای مانده
-    const dleft = daysUntil(expiryISO);
-    $days.textContent = String(dleft);
+    const dleft = daysUntilJalali(expiry);
+    $days.textContent = dleft;
 
     const deviceId = document.getElementById('deviceId').value.trim() || DEFAULT_DEVICE_ID;
     const topic = `devices/${deviceId}/expiry`;
-    const payload = JSON.stringify({ expiry: expiryISO, daysLeft: dleft, productCode: text });
+    const payload = JSON.stringify({ expiry: expiry, daysLeft: dleft, productCode: expiry });
 
     client.publish(topic, payload, { qos: 0, retain: true }, (err)=>{
       if(err){
