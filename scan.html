@@ -1,45 +1,191 @@
-<!DOCTYPE html>
-<html lang="fa">
+<!doctype html>
+<html lang="fa" dir="rtl">
 <head>
-  <meta charset="UTF-8">
-  <title>اسکن بارکد و ارسال به ESP</title>
-  <script src="https://unpkg.com/html5-qrcode"></script>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>اسکن انقضا → MQTT</title>
+  <style>
+    body { font-family: sans-serif; margin: 16px; }
+    #video { width: 100%; max-width: 480px; background:#000; }
+    .row { margin: 8px 0; }
+    .ok { color: green; }
+    .warn { color: #c09000; }
+    .err { color: #b00020; }
+    code { background:#f5f5f5; padding:2px 4px; border-radius:4px; }
+  </style>
 </head>
-<body style="font-family: sans-serif; text-align:center; margin-top:50px;">
-  <h2>📷 اسکن بارکد</h2>
-  <div id="reader" style="width:300px; margin:auto;"></div>
-  <p>تاریخ انقضا: <span id="expiryDate">---</span></p>
-  <button onclick="sendDate()">ارسال به ESP</button>
+<body>
+  <h1>اسکن بارکد → ارسال تاریخ انقضا به ESP8266 (MQTT)</h1>
+
+  <div class="row">
+    <label>Device ID (تاپیک مقصد): </label>
+    <input id="deviceId" value="esp8266-lamps-001" style="width:240px" />
+  </div>
+
+  <div class="row">
+    <button id="btnStart">شروع اسکن</button>
+    <span id="status" class="warn">در انتظار اجازه دوربین…</span>
+  </div>
+
+  <video id="video" playsinline></video>
+  <canvas id="canvas" style="display:none;"></canvas>
+
+  <div class="row">
+    <strong>آخرین نتیجه:</strong>
+    <div>بارکد: <code id="raw"></code></div>
+    <div>تاریخ انقضا: <code id="expiry"></code></div>
+    <div>روزهای مانده: <code id="days"></code></div>
+    <div>وضعیت ارسال: <span id="sent"></span></div>
+  </div>
+
+  <!-- MQTT.js از CDN -->
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <!-- ZXing از CDN -->
+  <script src="https://unpkg.com/@zxing/library@latest"></script>
 
   <script>
-    const ESP_IP = "192.168.43.98";  // آی‌پی ثابت ESP8266
-    let expiryDate = "";
+  // ====== تنظیمات MQTT (WSS) را اینجا ست کنید ======
+  const MQTT_WSS_URL = 'wss://your-broker.example.com:8884/mqtt'; // جایگزین کنید
+  const MQTT_USER = 'your_mqtt_user';  // اگر لازم است
+  const MQTT_PASS = 'your_mqtt_pass';  // اگر لازم است
 
-    function onScanSuccess(decodedText) {
-      expiryDate = decodedText;
-      document.getElementById("expiryDate").innerText = expiryDate;
+  // اتصال MQTT
+  const client = mqtt.connect(MQTT_WSS_URL, {
+    username: MQTT_USER || undefined,
+    password: MQTT_PASS || undefined,
+    clean: true,
+    reconnectPeriod: 2000,
+    connectTimeout: 10_000,
+  });
+
+  client.on('connect', () => {
+    document.getElementById('status').textContent = 'MQTT وصل شد ✔️';
+    document.getElementById('status').className = 'ok';
+  });
+  client.on('reconnect', () => {
+    document.getElementById('status').textContent = 'در حال تلاش برای اتصال MQTT…';
+    document.getElementById('status').className = 'warn';
+  });
+  client.on('error', (err) => {
+    document.getElementById('status').textContent = 'خطای MQTT: ' + err.message;
+    document.getElementById('status').className = 'err';
+  });
+
+  // ====== دوربین و اسکن ======
+  const video = document.getElementById('video');
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  const codeReader = new ZXing.BrowserMultiFormatReader();
+
+  const $raw = document.getElementById('raw');
+  const $expiry = document.getElementById('expiry');
+  const $days = document.getElementById('days');
+  const $sent = document.getElementById('sent');
+
+  let scanning = false;
+
+  document.getElementById('btnStart').addEventListener('click', async () => {
+    try {
+      document.getElementById('status').textContent = 'درخواست دسترسی دوربین…';
+      document.getElementById('status').className = 'warn';
+
+      const devices = await ZXing.BrowserCodeReader.listVideoInputDevices();
+      const preferred = devices[0]?.deviceId;
+      await codeReader.decodeFromVideoDevice(preferred, 'video', (result, err) => {
+        if (result) {
+          handleBarcode(result.getText());
+        }
+      });
+
+      document.getElementById('status').textContent = 'اسکن فعال است. بارکد را روبروی دوربین بگیرید.';
+      document.getElementById('status').className = 'ok';
+      scanning = true;
+    } catch (e) {
+      document.getElementById('status').textContent = 'عدم دسترسی به دوربین یا خطا: ' + e.message;
+      document.getElementById('status').className = 'err';
     }
+  });
 
-    // شروع اسکن با دوربین
-    const html5QrCode = new Html5Qrcode("reader");
-    html5QrCode.start(
-      { facingMode: "environment" },
-      { fps: 10, qrbox: 250 },
-      onScanSuccess
-    );
+  // ====== پارس تاریخ GS1 (AI 17 = YYMMDD) ======
+  // ورودی می‌تواند شامل FNC1 و پرانتزها باشد، مثل: (01)09506000134352(17)250930
+  // یا بدون پرانتز / با GS1-128. این تابع سعی می‌کند AI=17 را پیدا کند.
+  function parseGs1Expiry(raw) {
+    // 1) حالت استاندارد با پرانتز (17)YYMMDD
+    const m1 = raw.match(/\(17\)\s?(\d{6})/);
+    if (m1) return yymmddToISO(m1[1]);
 
-    // ارسال تاریخ به ESP
-    function sendDate() {
-      if (!expiryDate) {
-        alert("اول بارکد رو اسکن کن!");
-        return;
+    // 2) حالت بدون پرانتز اما AIها پشت‌سرهم (FNC1 به‌صورت ASCII 29 یا غیره)
+    // AI=17 شش رقم بعدی
+    const m2 = raw.match(/(?:^|[^0-9])17(\d{6})/);
+    if (m2) return yymmddToISO(m2[1]);
+
+    return null;
+  }
+
+  function yymmddToISO(yymmdd) {
+    const yy = parseInt(yymmdd.slice(0,2), 10);
+    const mm = parseInt(yymmdd.slice(2,4), 10);
+    const dd = parseInt(yymmdd.slice(4,6), 10);
+    // فرض: سال‌های 2000–2099
+    const yyyy = 2000 + yy;
+    const m = String(mm).padStart(2, '0');
+    const d = String(dd).padStart(2, '0');
+    return `${yyyy}-${m}-${d}`;
+  }
+
+  function daysUntil(dateISO) {
+    const now = new Date();
+    const tgt = new Date(dateISO + 'T12:00:00Z'); // وسط روز برای پایداری
+    const diffMs = tgt.getTime() - now.getTime();
+    return Math.round(diffMs / (1000*60*60*24));
+  }
+
+  function handleBarcode(text) {
+    $raw.textContent = text;
+
+    // تلاش برای استخراج تاریخ انقضا از GS1
+    const expiryISO = parseGs1Expiry(text);
+    if (!expiryISO) {
+      $expiry.textContent = 'یافت نشد (AI 17 در GS1 وجود ندارد)';
+      $expiry.parentElement.className = 'err';
+      $sent.textContent = '—';
+      return;
+    }
+    $expiry.textContent = expiryISO;
+    $expiry.parentElement.className = '';
+
+    const dleft = daysUntil(expiryISO);
+    $days.textContent = String(dleft);
+
+    // ساخت پیام
+    const deviceId = document.getElementById('deviceId').value.trim() || 'esp8266-lamps-001';
+    const topic = `devices/${deviceId}/expiry`;
+    const payload = JSON.stringify({
+      productCode: extractGs1GTIN(text), // اگر موجود باشد
+      expiry: expiryISO,
+      daysLeft: dleft
+    });
+
+    // Publish با QoS 0 و retain=false (یا true اگر می‌خواهید ESP بعداً هم بگیرد)
+    client.publish(topic, payload, { qos: 0, retain: true }, (err) => {
+      if (err) {
+        $sent.textContent = 'خطا در ارسال MQTT: ' + err.message;
+        $sent.className = 'err';
+      } else {
+        $sent.textContent = `ارسال شد به ${topic}`;
+        $sent.className = 'ok';
       }
-      fetch(`http://${ESP_IP}/expire?date=${expiryDate}`)
-        .then(res => res.text())
-        .then(data => alert("پاسخ از ESP: " + data))
-        .catch(err => alert("خطا در ارتباط با ESP: " + err));
-    }
+    });
+  }
+
+  // استخراج GTIN از GS1 AI=01 (اختیاری)
+  function extractGs1GTIN(raw) {
+    const m1 = raw.match(/\(01\)\s?(\d{14})/);
+    if (m1) return m1[1];
+    const m2 = raw.match(/(?:^|[^0-9])01(\d{14})/);
+    if (m2) return m2[1];
+    return null;
+  }
   </script>
 </body>
 </html>
-
