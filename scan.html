@@ -28,7 +28,6 @@
   </div>
 
   <video id="video" playsinline></video>
-  <canvas id="canvas" style="display:none;"></canvas>
 
   <div class="row">
     <strong>نتیجه:</strong>
@@ -49,7 +48,6 @@
   const MQTT_USER = '';   // برای HiveMQ public خالی است
   const MQTT_PASS = '';
   
-  // ====== Device ID ======
   const DEFAULT_DEVICE_ID = 'esp8266-lamps-001';
 
   // ====== اتصال MQTT ======
@@ -87,7 +85,7 @@
       document.getElementById('status').textContent = 'در حال دسترسی به دوربین…';
       document.getElementById('status').className = 'warn';
 
-      // دوربین پیش‌فرض را مستقیم باز می‌کنیم
+      // دوربین پیش‌فرض موبایل
       codeReader.decodeFromVideoDevice(null, 'video', (result, err) => {
         if (result) handleBarcode(result.getText());
         if (err && !(err instanceof ZXing.NotFoundException)) console.error(err);
@@ -102,8 +100,6 @@
   });
 
   // ====== توابع ======
-
-  // استخراج تاریخ از GS1 AI=17 (YYMMDD)
   function parseGs1Expiry(raw) {
     const m1 = raw.match(/\(17\)\s?(\d{6})/);
     if (m1) return yymmddToISO(m1[1]);
