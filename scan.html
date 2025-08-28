@@ -47,7 +47,7 @@
   const MQTT_WSS_URL = 'wss://broker.hivemq.com:8000/mqtt'; // تست با بروکر عمومی
   const MQTT_USER = '';   // برای HiveMQ public خالی است
   const MQTT_PASS = '';
-  
+
   const DEFAULT_DEVICE_ID = 'esp8266-lamps-001';
 
   // ====== اتصال MQTT ======
@@ -100,22 +100,6 @@
   });
 
   // ====== توابع ======
-  function parseGs1Expiry(raw) {
-    const m1 = raw.match(/\(17\)\s?(\d{6})/);
-    if (m1) return yymmddToISO(m1[1]);
-    const m2 = raw.match(/(?:^|[^0-9])17(\d{6})/);
-    if (m2) return yymmddToISO(m2[1]);
-    return null;
-  }
-
-  function yymmddToISO(yymmdd){
-    const yy = parseInt(yymmdd.slice(0,2),10);
-    const mm = String(parseInt(yymmdd.slice(2,4),10)).padStart(2,'0');
-    const dd = String(parseInt(yymmdd.slice(4,6),10)).padStart(2,'0');
-    const yyyy = 2000 + parseInt(yymmdd.slice(0,2),10);
-    return `${yyyy}-${mm}-${dd}`;
-  }
-
   function daysUntil(dateISO){
     const now = new Date();
     const tgt = new Date(dateISO + 'T12:00:00Z');
@@ -126,17 +110,11 @@
   function handleBarcode(text){
     $raw.textContent = text;
 
-    const expiryISO = parseGs1Expiry(text);
-    if(!expiryISO){
-      $expiry.textContent = 'یافت نشد (AI 17 وجود ندارد)';
-      $expiry.parentElement.className = 'err';
-      $sent.textContent = '—';
-      return;
-    }
-
+    // همان بارکد را به عنوان تاریخ انقضا در نظر می‌گیریم
+    const expiryISO = text.trim();
     $expiry.textContent = expiryISO;
-    $expiry.parentElement.className = '';
 
+    // محاسبه روزهای مانده
     const dleft = daysUntil(expiryISO);
     $days.textContent = String(dleft);
 
