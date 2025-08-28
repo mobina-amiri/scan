@@ -11,7 +11,8 @@
     .ok { color: green; }
     .warn { color: #c09000; }
     .err { color: #b00020; }
-    code { background:#f5f5f5; padding:2px 4px; border-radius:4px; }
+    code { background:#f5f5f5; padding:2px 4px; border-radius:4px; font-size:1.2em; }
+    #raw { font-size:1.5em; font-weight:bold; }
   </style>
 </head>
 <body>
@@ -40,8 +41,8 @@
   <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
   <!-- ZXing -->
   <script src="https://unpkg.com/@zxing/library@latest"></script>
-  <!-- moment-jalaali برای تبدیل تاریخ شمسی -->
-  <script src="https://cdn.jsdelivr.net/npm/moment-jalaali@0.9.2/build/moment-jalaali.js"></script>
+  <!-- moment-jalaali -->
+  <script src="https://cdn.jsdelivr.net/npm/moment-jalaali/build/moment-jalaali.js"></script>
 
   <script>
   // ====== تنظیمات MQTT ======
@@ -98,10 +99,9 @@
     }
   });
 
-  // تابع تبدیل تاریخ شمسی به میلادی و محاسبه روزهای مانده
+  // تبدیل تاریخ شمسی به میلادی و محاسبه روزهای مانده
   function daysUntilJalali(jalaliDateStr){
-    // فرمت ورودی: 1404/09/06
-    const m = moment.from(jalaliDateStr, 'jYYYY/jMM/jDD', true); 
+    const m = moment(jalaliDateStr, 'jYYYY/jMM/jDD', true); // فرمت صحیح
     if(!m.isValid()) return '-';
     const now = moment();
     const diff = m.diff(now, 'days');
